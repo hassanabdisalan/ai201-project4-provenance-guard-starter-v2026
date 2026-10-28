@@ -78,9 +78,18 @@
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:**
+**The rule:** Take a weighted average of `model_score` and `style_score`,
+style weighted higher because Milestone 1 showed the model signal is the one
+that falsely accuses plain writers. Then, if the two signals disagree by 0.4
+or more, treat that disagreement as real uncertainty rather than averaging it
+away: pull the weighted result halfway toward whichever signal reads *more
+human*. A wrong accusation costs a real writer more than a missed detection
+costs the site, so when the two methods can't agree, the system should lean
+toward not accusing — not split the difference as if disagreement meant
+nothing.
 
-**The numbers:**
+**The numbers:** `WEIGHT_MODEL_SIGNAL = 0.4`, `WEIGHT_STYLE_SIGNAL = 0.6`.
+Disagreement threshold: `0.4`. All three are in `config.py`.
 
 **Where it lives:** `scoring.py::combine_signals`
 
@@ -88,6 +97,17 @@
      somewhere else, say where. -->
 
 **A case where my two signals split, and what my rule does with it:**
+
+Lightly-edited AI text (typos and filler words stitched into a model-generated
+paragraph) scored `model_score = 0.223` (the typos raised perplexity enough
+to read as human-ish) but `style_score = 0.459` (the underlying sentence
+structure is still too even and the vocabulary too narrow to read as human).
+The gap is 0.236 — under my 0.4 disagreement threshold, so the rule just
+weighted-averages them: `combined_score = 0.364`, landing just inside "unsure"
+rather than "human". That's the case the disagreement rule exists for, even
+though this particular gap wasn't wide enough to trigger it — it shows the
+model signal alone would have under-called this one, and the style signal is
+what kept it out of the "human" band.
 
 
 
@@ -130,23 +150,24 @@
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "I almost did not go to the party, but Maria texted me a dumb meme at the last second.", "creator_id": "hassan"}'
+  -d '{"text": "I almost did not go to the party. Honestly almost bailed. But Maria texted me this dumb meme right as I was putting my shoes back on, and that was it, I was going. Glad I did -- the lasagna someone brought was unreal, and I ended up staying until 2am arguing about whether cereal counts as soup, which, for the record, it does not.", "creator_id": "hassan"}'
 ```
 
 ```json
 {
+  "combined_score": 0.3977,
   "confidence": 0.0,
-  "content_id": "2ca105d2-1f79-4d51-9e83-5450262da330",
+  "content_id": "860efca4-1a9a-491d-b476-ef34e8267528",
   "guess": "unsure",
-  "label": "PLACEHOLDER — scoring isn't built yet (Milestone 4/5).",
-  "model_score": 0.3521,
-  "style_score": null
+  "label": "PLACEHOLDER — labeling isn't built yet (Milestone 5).",
+  "model_score": 0.4011,
+  "style_score": 0.3954
 }
 ```
 
-<!-- Milestone 3: only the model signal is wired in, so style_score is still
-     null and guess/confidence/label are placeholders. Milestone 4 adds the
-     style signal and the combined score; Milestone 5 adds the real label. -->
+<!-- Milestone 4: both signals and the combined score are wired in.
+     guess/confidence/label are still placeholders — Milestone 5 adds the
+     real label. -->
 
 **An appeal**
 
@@ -171,15 +192,15 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
   "count": 1,
   "entries": [
     {
-      "combined_score": null,
-      "content_id": "2ca105d2-1f79-4d51-9e83-5450262da330",
+      "combined_score": 0.3977,
+      "content_id": "860efca4-1a9a-491d-b476-ef34e8267528",
       "creator_id": "hassan",
       "guess": "unsure",
-      "label": "PLACEHOLDER — scoring isn't built yet (Milestone 4/5).",
-      "model_score": 0.3521,
+      "label": "PLACEHOLDER — labeling isn't built yet (Milestone 5).",
+      "model_score": 0.4011,
       "status": "decided",
-      "style_score": null,
-      "timestamp": "2026-10-28T23:07:04+00:00"
+      "style_score": 0.3954,
+      "timestamp": "2026-10-28T23:13:18+00:00"
     }
   ]
 }

@@ -216,20 +216,26 @@ def submit():
         }), 400
 
     import detector
+    import stylometry
+    import scoring
 
     content_id = str(uuid.uuid4())
     model_score = detector.model_signal(text)
+    style_score = stylometry.style_signal(text)
+    combined_score = scoring.combine_signals(model_score, style_score)
 
-    # Milestone 4 replaces these with the combined score and the real label.
+    # Milestone 5 replaces these with the real guess and label text.
     guess = "unsure"
     confidence = 0.0
-    label = "PLACEHOLDER — scoring isn't built yet (Milestone 4/5)."
+    label = "PLACEHOLDER — labeling isn't built yet (Milestone 5)."
 
     audit.log_decision(
         content_id=content_id,
         creator_id=creator_id,
         guess=guess,
         model_score=model_score,
+        style_score=style_score,
+        combined_score=combined_score,
         label=label,
     )
 
@@ -239,7 +245,8 @@ def submit():
         "confidence": confidence,
         "label": label,
         "model_score": model_score,
-        "style_score": None,
+        "style_score": style_score,
+        "combined_score": combined_score,
     })
 
 
