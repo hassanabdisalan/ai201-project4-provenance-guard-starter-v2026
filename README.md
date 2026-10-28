@@ -233,15 +233,35 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 **Moment 1**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* Help designing `scoring.py::combine_signals` — specifically
+  what to do when the two signals disagree, given my Milestone 1 finding that
+  the model signal falsely accuses plain writers.
+- *What came back:* A plain weighted average (0.4 model / 0.6 style), plus a
+  rule that when the two signals split by 0.4 or more, pulls the combined
+  score halfway toward whichever signal reads more human, instead of letting
+  the average silently cancel the disagreement out.
+- *What I changed:* I kept the dampening idea but picked the 0.4 split
+  threshold and the 0.4/0.6 weights myself after running the four calibration
+  inputs — the first weights suggested were 0.5/0.5, and I moved weight onto
+  the style signal only after seeing how badly the model signal treated plain,
+  ordinary sentences in my own tests.
 
 **Moment 2**
 
-- *What I asked for:*
-- *What came back:*
-- *What I changed:*
+- *What I asked for:* My "clearly human" calibration text kept landing in the
+  "unsure" band instead of "human" no matter what I tried, so I asked for help
+  finding out why — print both signals separately and figure out which one
+  was off.
+- *What came back:* Running `stylometry.py` on the failing text directly
+  showed `punctuation_density` returning exactly 0 for ordinary prose with no
+  semicolons or dashes, which `style_signal` was flipping into a near-maximal
+  AI score — dragging otherwise clearly human text upward for no real reason.
+- *What I changed:* I rebalanced the three style measures from an equal
+  1/3 split to 0.45 / 0.45 / 0.10, cutting punctuation's weight, rather than
+  removing the measure outright — it's still informative when it IS present,
+  just unreliable as a default-zero signal. I re-ran all four calibration
+  cases afterward to confirm the human label became reachable without
+  breaking the AI and unsure cases.
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 
