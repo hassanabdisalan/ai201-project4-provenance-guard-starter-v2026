@@ -54,12 +54,14 @@ MAX_TEXT_CHARS = 20_000
 # ─── Scoring (Milestone 4) ───────────────────────────────────────────────────
 # How much each signal counts toward the combined score.
 #
-# ⚠️ These are placeholders. Milestone 4 asks you to write your combining rule
-# down BEFORE you code it, and to put the numbers in your README. Whatever you
-# decide, it goes here.
+# Three signals (stretch): phrasing.py::phrase_signal is a third, optional
+# signal layered on top of the required two. It's the easiest of the three to
+# defeat on purpose (see phrasing.py's blind-spot note), so it carries the
+# smallest weight — it nudges the score, it doesn't drive it.
 
-WEIGHT_MODEL_SIGNAL = 0.4
-WEIGHT_STYLE_SIGNAL = 0.6
+WEIGHT_MODEL_SIGNAL = 0.35
+WEIGHT_STYLE_SIGNAL = 0.5
+WEIGHT_PHRASE_SIGNAL = 0.15
 
 
 # ─── Thresholds (Milestone 5) ────────────────────────────────────────────────
@@ -87,6 +89,17 @@ AI_THRESHOLD = 0.65
 # If a label you can't reach is the problem, the fix is upstream of the
 # thresholds: a style signal that actually varies. `scoring.label_ranges()`
 # prints the bands; the reachable range is a different question.
+
+
+# ─── Verified-human path (stretch) ───────────────────────────────────────────
+# A writer who types this phrase back exactly, via POST /verify, gets a
+# "verified" credential attached to their creator_id — not proof they didn't
+# use AI, just an honor-code attestation that shows up on their submissions.
+# A shared phrase is a weak credential (anyone can read it here and claim it
+# for any creator_id); it's a stretch demo of the mechanism, not a real
+# identity check.
+
+VERIFICATION_PHRASE = "I attest this is my own writing"
 
 
 # ─── Rate limiting (UNIT 8) ──────────────────────────────────────────────────

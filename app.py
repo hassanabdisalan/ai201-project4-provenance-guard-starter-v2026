@@ -217,13 +217,16 @@ def submit():
 
     import detector
     import stylometry
+    import phrasing
     import scoring
 
     content_id = str(uuid.uuid4())
     model_score = detector.model_signal(text)
     style_score = stylometry.style_signal(text)
-    combined_score = scoring.combine_signals(model_score, style_score)
+    phrase_score = phrasing.phrase_signal(text)
+    combined_score = scoring.combine_signals(model_score, style_score, phrase_score)
     guess, label = scoring.score_to_label(combined_score)
+    creator_verified = bool(creator_id) and audit.is_verified(creator_id)
 
     # How far the combined score sits from the undecided midpoint — 0 at
     # dead center, 1 at either extreme. Independent of which band it lands in.
@@ -237,6 +240,8 @@ def submit():
         style_score=style_score,
         combined_score=combined_score,
         label=label,
+        phrase_score=phrase_score,
+        creator_verified=creator_verified,
     )
 
     return jsonify({
@@ -246,7 +251,9 @@ def submit():
         "label": label,
         "model_score": model_score,
         "style_score": style_score,
+        "phrase_score": phrase_score,
         "combined_score": combined_score,
+        "creator_verified": creator_verified,
     })
 
 
@@ -300,6 +307,84 @@ def appeal():
         "ok": True,
         "content_id": content_id,
         "status": "under_review",
+    })
+
+
+# ── Stretch: a verified-human credential ──────────────────────────────────────
+
+@app.post("/verify")
+def verify():
+    """
+    A writer attests, in one extra step, that their work is their own.
+
+    Expects JSON:
+        {"creator_id": "...", "phrase": "..."}
+
+    `phrase` must match `config.VERIFICATION_PHRASE` exactly. This is an
+    honor-code attestation, not an identity check — anyone who reads this
+    file can type the phrase for any creator_id. What it demonstrates is the
+    mechanism: a credential that shows up on a writer's later submissions
+    as `creator_verified: true` (see /submit), not a claim that it can't be
+    gamed.
+    """
+    payload = request.get_json(silent=True) or {}
+    creator_id = payload.get("creator_id")
+    phrase = payload.get("phrase")
+
+    if not isinstance(creator_id, str) or not creator_id.strip():
+        return jsonify({
+            "error": "bad_request",
+            "message": "creator_id is required and must be a non-empty string.",
+        }), 400
+
+    if not isinstance(phrase, str) or phrase.strip() != config.VERIFICATION_PHRASE:
+        return jsonify({
+            "error": "bad_request",
+            "message": "phrase did not match the expected verification phrase.",
+        }), 400
+
+    audit.log_verification(creator_id)
+
+    return jsonify({
+        "ok": True,
+        "creator_id": creator_id,
+        "verified": True,
+    })
+
+
+# ── Stretch: look up one item's current status ────────────────────────────────
+
+@app.get("/content/<content_id>")
+def get_content(content_id):
+    """
+    One item's current status, by content_id.
+
+        curl http://127.0.0.1:5000/content/<content_id>
+
+    Reflects the original decision plus whatever's happened to it since — an
+    appeal moves `status` to `under_review` without touching the original
+    scores, since the log that backs this is append-only.
+    """
+    entries = audit.entries_for(content_id)
+    if not entries:
+        return jsonify({
+            "error": "not_found",
+            "message": f"No submission found with content_id '{content_id}'.",
+        }), 404
+
+    decision = next((e for e in entries if e.get("event") is None), entries[0])
+    latest = entries[-1]
+
+    return jsonify({
+        "content_id": content_id,
+        "creator_id": decision.get("creator_id"),
+        "guess": decision.get("guess"),
+        "label": decision.get("label"),
+        "model_score": decision.get("model_score"),
+        "style_score": decision.get("style_score"),
+        "phrase_score": decision.get("phrase_score"),
+        "combined_score": decision.get("combined_score"),
+        "status": latest.get("status", decision.get("status")),
     })
 
 

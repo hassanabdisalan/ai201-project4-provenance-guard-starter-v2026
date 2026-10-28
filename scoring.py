@@ -19,50 +19,55 @@ you claim, so that line should read `scoring.py::combine_signals`.
 import config
 
 
-def combine_signals(model_score: float, style_score: float) -> float:
+def combine_signals(
+    model_score: float, style_score: float, phrase_score: float | None = None
+) -> float:
     """
-    Combine two 0–1 signals into one 0–1 score. ← TODO (Milestone 4)
+    Combine two or three 0–1 signals into one 0–1 score.
 
-    Both inputs point the same way: higher means more likely AI. Your output
-    should too.
+    All inputs point the same way: higher means more likely AI. The output
+    does too.
 
     Args:
         model_score: from `detector.model_signal` — how predictable the text is.
         style_score: from `stylometry.style_signal` — the shape of the text.
+        phrase_score: (stretch, optional) from `phrasing.phrase_signal` — how
+            often known AI-stock phrases appear. Omit it (or pass None) to
+            fall back to the required two-signal rule.
 
     Returns:
         A float from 0.0 (confidently human) to 1.0 (confidently AI).
 
-    ⚠️ **Write the rule down before you code it, and put the numbers in your
-    README.** A weighted average is the obvious choice and it is not the only
-    one. Things worth thinking about:
+    **The rule:** a weighted average — `config.WEIGHT_MODEL_SIGNAL`,
+    `WEIGHT_STYLE_SIGNAL`, and (when a third score is given)
+    `WEIGHT_PHRASE_SIGNAL` — followed by a disagreement check.
 
-      - **What happens when they disagree?** One signal at 0.9 and the other at
-        0.1 averages to 0.5 — "unsure". Is that what you want? It might be
-        exactly right: two methods disagreeing IS uncertainty. Or you might
-        decide one signal is more trustworthy when they split.
+    **When they disagree:** if `model_score` and `style_score` split by 0.4
+    or more, the weighted result is pulled halfway toward whichever of the
+    two reads *most human* (the lower one), rather than letting the average
+    quietly cancel the disagreement out. A wrong accusation costs a real
+    writer more than a missed detection costs the site (Milestone 1), so
+    when the signals can't agree, the system leans toward not accusing.
 
-      - **Which way do you want to be wrong?** Weighting toward the signal that
-        reads more human means fewer false accusations and more AI text
-        getting through. There's no weighting that avoids the trade.
-
-      - Milestone 4 asks you to find a case where your two signals split and
-        write it down. That case is what this rule exists to handle.
-
-    The weights in config.py are placeholders. Change them, or ignore them and
-    write a different rule.
+    The disagreement check only looks at `model_score` and `style_score`,
+    not `phrase_score` — `phrase_score` sits at 0.0 for almost all text
+    (most writing, human or AI, uses none of the stock phrases it looks
+    for), and that floor value isn't evidence of anything. Folding it into
+    the "which signal reads most human" comparison would make the dampening
+    rule fire on nearly every submission, for no real reason — the same
+    kind of false-zero problem `stylometry.punctuation_density` had before
+    it was reweighted. The phrase signal only ever acts through the
+    weighted average.
     """
-    weighted = (
-        config.WEIGHT_MODEL_SIGNAL * model_score
-        + config.WEIGHT_STYLE_SIGNAL * style_score
-    )
+    scores = [model_score, style_score]
+    weights = [config.WEIGHT_MODEL_SIGNAL, config.WEIGHT_STYLE_SIGNAL]
 
-    # When the two signals split sharply, don't just average them away — that
-    # silently turns real disagreement into manufactured confidence. Pull the
-    # result toward the MORE HUMAN-reading signal instead, because (Milestone
-    # 1) a wrong accusation costs a real writer more than a missed detection
-    # costs the site. This is the one-sided bet config.py's docstring warns
-    # there's no way to avoid making.
+    if phrase_score is not None:
+        scores.append(phrase_score)
+        weights.append(config.WEIGHT_PHRASE_SIGNAL)
+
+    weighted = sum(s * w for s, w in zip(scores, weights)) / sum(weights)
+
     if abs(model_score - style_score) >= 0.4:
         more_human_reading = min(model_score, style_score)
         weighted = (weighted + more_human_reading) / 2.0

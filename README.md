@@ -73,41 +73,79 @@
 
 **What it can't see:** This signal cannot read. It has no idea what the text says, only its shape. Anything that changes the shape without changing the substance moves the score — adding typos, breaking up sentences, pasting in a quotation. That's a cheap thing for someone to do on purpose, which makes this signal easy to game.
 
+### Signal three (stretch) — the stock-phrase signal
+
+**What it measures:** How often a fixed list of known LLM filler/transition
+phrases appears — things like "it is important to note," "furthermore,"
+"delve into," "in conclusion" — counted per 100 words.
+
+**Why that might differ between human and AI writing:** These phrases are
+disproportionately common defaults in instruction-tuned model output —
+safe, generic hedges and transitions a model reaches for by habit. A human
+writer uses some occasionally, but rarely clusters several into one short
+submission.
+
+**What it can't see:** This is a fixed list, nothing more — lexical
+fingerprinting, not understanding. A model told to avoid these phrases
+slips through untouched, and a human who genuinely writes in that same
+hedge-y, academic register by habit gets flagged by a measure that can't
+tell voice from imitation. It's the easiest of the three signals to defeat
+on purpose, which is exactly why it carries the smallest weight below.
+
 ### The combining rule
 
 <!-- Write the rule in words, then give the numbers. What happens when the two
      signals disagree? -->
 
-**The rule:** Take a weighted average of `model_score` and `style_score`,
-style weighted higher because Milestone 1 showed the model signal is the one
-that falsely accuses plain writers. Then, if the two signals disagree by 0.4
-or more, treat that disagreement as real uncertainty rather than averaging it
-away: pull the weighted result halfway toward whichever signal reads *more
-human*. A wrong accusation costs a real writer more than a missed detection
-costs the site, so when the two methods can't agree, the system should lean
-toward not accusing — not split the difference as if disagreement meant
-nothing.
+**The rule:** Take a weighted average of `model_score`, `style_score`, and
+(stretch) `phrase_score` — style weighted highest because Milestone 1 showed
+the model signal is the one that falsely accuses plain writers, and the
+phrase signal weighted lowest because it's a fixed list, the easiest of the
+three to defeat on purpose. Then, if `model_score` and `style_score` disagree
+by 0.4 or more, treat that disagreement as real uncertainty rather than
+averaging it away: pull the weighted result halfway toward whichever of the
+two reads *more human*. A wrong accusation costs a real writer more than a
+missed detection costs the site, so when the two core signals can't agree,
+the system should lean toward not accusing — not split the difference as if
+disagreement meant nothing.
 
-**The numbers:** `WEIGHT_MODEL_SIGNAL = 0.4`, `WEIGHT_STYLE_SIGNAL = 0.6`.
-Disagreement threshold: `0.4`. All three are in `config.py`.
+The disagreement check deliberately leaves `phrase_score` out. It sits at
+0.0 for almost all text — most writing, human or AI, uses none of the stock
+phrases it looks for — and that floor value isn't evidence of anything.
+Folding it into "which signal reads most human" would fire the dampening
+rule on nearly every submission, the same false-zero problem
+`stylometry.punctuation_density` had before it got reweighted. The phrase
+signal only ever acts through the weighted average.
+
+**The numbers:** `WEIGHT_MODEL_SIGNAL = 0.35`, `WEIGHT_STYLE_SIGNAL = 0.5`,
+`WEIGHT_PHRASE_SIGNAL = 0.15`. Disagreement threshold: `0.4`. All in
+`config.py`.
 
 **Where it lives:** `scoring.py::combine_signals`
 
 <!-- ⚠️ The grader checks your code against that line. If your rule lives
      somewhere else, say where. -->
 
-**A case where my two signals split, and what my rule does with it:**
+**A case where my signals split, and what my rule does with it:**
 
-Lightly-edited AI text (typos and filler words stitched into a model-generated
-paragraph) scored `model_score = 0.223` (the typos raised perplexity enough
-to read as human-ish) but `style_score = 0.468` (the underlying sentence
-structure is still too even and the vocabulary too narrow to read as human).
-The gap is 0.245 — under my 0.4 disagreement threshold, so the rule just
-weighted-averages them: `combined_score = 0.370`, landing in "unsure" rather
-than "human". That's the case the disagreement rule exists for, even though
-this particular gap wasn't wide enough to trigger the dampening — it shows
-the model signal alone would have under-called this one, and the style
-signal is what kept it out of the "human" band.
+Lightly-edited AI text (typos and filler words stitched into a
+model-generated paragraph) scored `model_score = 0.223` (the typos raised
+perplexity enough to read as human-ish) but `style_score = 0.468` (the
+underlying sentence structure is still too even and the vocabulary too
+narrow to read as human). That 0.245 gap is under my 0.4 disagreement
+threshold, so the rule weighted-averages the two rather than dampening.
+
+Before adding the stock-phrase signal, that case landed at `combined_score =
+0.370` — "unsure." After, with `phrase_score = 0.0` (no stock phrases in
+this text) pulled into the weighted average, it drops to `combined_score =
+0.312` — "human." That's a real trade-off worth being honest about: the
+third signal is strong at catching AI text that leans on stock phrasing (a
+stock-phrase-heavy AI paragraph I tested scored `phrase_score = 1.0` and
+pushed the combined score from 0.567 to 0.635), but its 0.0 floor on
+ordinary AI paraphrase drags the average down and makes this particular kind
+of evasion *harder* to catch than before. Adding a signal doesn't only add
+information — when the new signal defaults to "looks human," it also dilutes
+the signals that were catching the case correctly.
 
 
 
@@ -164,27 +202,32 @@ $ curl -X POST http://127.0.0.1:5000/submit \
 
 ```json
 {
-  "combined_score": 0.5055,
-  "confidence": 0.011,
-  "content_id": "8e0d8d04-8486-447c-9240-5c58496297dd",
+  "combined_score": 0.4316,
+  "confidence": 0.1368,
+  "content_id": "a5301af1-028a-4a76-857b-dc70c947d623",
+  "creator_verified": false,
   "guess": "unsure",
   "label": "We couldn't confidently tell whether this was written by a person or by AI. This isn't an accusation — it means our check didn't come back clearly either way. If you wrote this yourself, you can appeal this result.",
   "model_score": 0.619,
+  "phrase_score": 0.0,
   "style_score": 0.4299
 }
 ```
+
+<!-- phrase_score and creator_verified are stretch-feature fields (third
+     signal, verified-human path) — see Stretch Features below. -->
 
 **An appeal**
 
 ```bash
 $ curl -X POST http://127.0.0.1:5000/appeal \
   -H "Content-Type: application/json" \
-  -d '{"content_id": "8e0d8d04-8486-447c-9240-5c58496297dd", "reasoning": "I wrote this myself for a club meeting; I did not use any AI tool."}'
+  -d '{"content_id": "a5301af1-028a-4a76-857b-dc70c947d623", "reasoning": "I wrote this myself for a club meeting; I did not use any AI tool."}'
 ```
 
 ```json
 {
-  "content_id": "8e0d8d04-8486-447c-9240-5c58496297dd",
+  "content_id": "a5301af1-028a-4a76-857b-dc70c947d623",
   "ok": true,
   "status": "under_review"
 }
@@ -201,29 +244,31 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
   "count": 2,
   "entries": [
     {
-      "combined_score": 0.5055,
-      "content_id": "8e0d8d04-8486-447c-9240-5c58496297dd",
+      "combined_score": 0.4316,
+      "content_id": "a5301af1-028a-4a76-857b-dc70c947d623",
       "creator_id": "hassan",
+      "creator_verified": false,
       "guess": "unsure",
       "label": "We couldn't confidently tell whether this was written by a person or by AI. This isn't an accusation — it means our check didn't come back clearly either way. If you wrote this yourself, you can appeal this result.",
       "model_score": 0.619,
+      "phrase_score": 0.0,
       "status": "decided",
       "style_score": 0.4299,
-      "timestamp": "2026-10-28T23:18:46+00:00"
+      "timestamp": "2026-10-28T23:29:25+00:00"
     },
     {
-      "content_id": "8e0d8d04-8486-447c-9240-5c58496297dd",
+      "content_id": "a5301af1-028a-4a76-857b-dc70c947d623",
       "creator_id": "hassan",
       "event": "appeal",
       "reasoning": "I wrote this myself for a club meeting; I did not use any AI tool.",
       "status": "under_review",
-      "timestamp": "2026-10-28T23:18:47+00:00"
+      "timestamp": "2026-10-28T23:29:26+00:00"
     }
   ]
 }
 ```
 
-<!-- The original decision for content_id 090ef74a... stays exactly as it
+<!-- The original decision for this content_id stays exactly as it
      was logged; the appeal is a new line added after it — the log is
      append-only, so nothing overwrites the original decision. -->
 
@@ -262,6 +307,146 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
   just unreliable as a default-zero signal. I re-ran all four calibration
   cases afterward to confirm the human label became reachable without
   breaking the AI and unsure cases.
+
+**Moment 3**
+
+- *What I asked for:* After adding the stock-phrase signal (stretch), I asked
+  for help running the same calibration set through all three signals to
+  check nothing broke.
+- *What came back:* Everything still looked reachable, but my disagreement
+  rule had started firing on almost every submission — because `phrase_score`
+  defaults to 0.0 for ordinary text, and the rule was treating that 0.0 as
+  "the most human-reading signal" and pulling every score down toward it.
+- *What I changed:* I scoped the disagreement check back down to just
+  `model_score` and `style_score`, the two it was originally designed for,
+  and left `phrase_score` acting only through the weighted average. I also
+  kept the honest finding that doing this still weakens detection of
+  lightly-edited AI slightly, rather than tuning the numbers until the test
+  case I liked came out looking good.
+
+---
+
+## Stretch Features
+
+### A third signal
+
+See **Signals and Scoring** above — `phrasing.py::phrase_signal` is the third
+signal (a fixed list of AI-stock phrases, rate per 100 words), weighted at
+`WEIGHT_PHRASE_SIGNAL = 0.15` against `0.35` for the model signal and `0.5`
+for the style signal in `scoring.py::combine_signals`. It's weighted lowest
+because it's a fixed list and the easiest of the three to defeat on purpose.
+
+### `GET /content/<id>`
+
+Returns one item's current status — the original decision plus whatever has
+happened to it since (an appeal moves `status` without touching the scores).
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/submit \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Rain. That is the first thing I remember about moving into the lopsided little house on Carver Street.", "creator_id": "hassan"}'
+```
+
+```json
+{
+  "combined_score": 0.1938,
+  "confidence": 0.6124,
+  "content_id": "fd8ae182-5d19-435a-b53e-2c835213f320",
+  "creator_verified": true,
+  "guess": "human",
+  "label": "We think this was probably written by a person.",
+  "model_score": 0.5718,
+  "phrase_score": 0.0,
+  "style_score": 0.125
+}
+```
+
+```bash
+$ curl http://127.0.0.1:5000/content/fd8ae182-5d19-435a-b53e-2c835213f320
+```
+
+```json
+{
+  "combined_score": 0.1938,
+  "content_id": "fd8ae182-5d19-435a-b53e-2c835213f320",
+  "creator_id": "hassan",
+  "guess": "human",
+  "label": "We think this was probably written by a person.",
+  "model_score": 0.5718,
+  "phrase_score": 0.0,
+  "status": "decided",
+  "style_score": 0.125
+}
+```
+
+After appealing that same `content_id`, the same `GET` call reflects the
+status change without the scores moving:
+
+```json
+{
+  "combined_score": 0.1938,
+  "content_id": "fd8ae182-5d19-435a-b53e-2c835213f320",
+  "creator_id": "hassan",
+  "guess": "human",
+  "label": "We think this was probably written by a person.",
+  "model_score": 0.5718,
+  "phrase_score": 0.0,
+  "status": "under_review",
+  "style_score": 0.125
+}
+```
+
+An unknown `content_id` returns a 404 rather than an empty success:
+
+```json
+{
+  "error": "not_found",
+  "message": "No submission found with content_id 'does-not-exist'."
+}
+```
+
+### A verified-human path
+
+A writer calls `POST /verify` with their `creator_id` and a fixed attestation
+phrase (`config.VERIFICATION_PHRASE`). A correct phrase logs a `verified`
+event for that `creator_id` via `audit.log_verification`; every later
+`/submit` from that same `creator_id` checks `audit.is_verified(...)` and
+carries `creator_verified: true` on the response and in the log entry. This
+is an honor-code attestation, not an identity check — anyone who reads
+`config.py` can type the phrase for any `creator_id` — but it demonstrates
+the mechanism: a credential that shows up on a writer's own submissions.
+
+```bash
+$ curl -X POST http://127.0.0.1:5000/verify \
+  -H "Content-Type: application/json" \
+  -d '{"creator_id": "hassan", "phrase": "I attest this is my own writing"}'
+```
+
+```json
+{
+  "creator_id": "hassan",
+  "ok": true,
+  "verified": true
+}
+```
+
+The credential then shows up on that creator's next submission
+(`"creator_verified": true` in the `/submit` response above), and is absent
+for an unverified creator submitting the identical text:
+
+```json
+{
+  "combined_score": 0.1938,
+  "confidence": 0.6124,
+  "content_id": "d62bae7f-186d-4eb9-b72a-2ea59fc50297",
+  "creator_verified": false,
+  "guess": "human",
+  "label": "We think this was probably written by a person.",
+  "model_score": 0.5718,
+  "phrase_score": 0.0,
+  "style_score": 0.125
+}
+```
 
 <!-- ═══════════════════════ UNIT 8 — THE TEST ═══════════════════════ -->
 

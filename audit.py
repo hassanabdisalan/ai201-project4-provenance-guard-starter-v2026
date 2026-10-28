@@ -92,6 +92,29 @@ def log_appeal(content_id: str, creator_id: str, reasoning: str) -> dict:
     })
 
 
+def log_verification(creator_id: str) -> dict:
+    """
+    Record that a creator_id passed the verified-human step (stretch).
+
+    Append-only, same as everything else here — a verification is itself an
+    event worth keeping in the trace, not a flag to flip somewhere.
+    """
+    return _append({
+        "timestamp": _now(),
+        "creator_id": creator_id,
+        "event": "verified",
+        "status": "verified",
+    })
+
+
+def is_verified(creator_id: str) -> bool:
+    """Has this creator_id ever completed the verified-human step?"""
+    return any(
+        e.get("creator_id") == creator_id and e.get("event") == "verified"
+        for e in read_entries()
+    )
+
+
 def log_rejection(creator_id: str, reason: str, **extra) -> dict:
     """
     Record a request that never became a decision — a rate-limit rejection or
