@@ -127,9 +127,16 @@ def style_signal(text: str) -> float:
       - type_token_ratio: already 0–1, no clamp needed.
       - punctuation_density: clamped to [0, 0.08] — typical dense usage.
 
-    The three flipped values are averaged with equal weight. Nothing here
-    claims one measure matters more than another; Milestone 4's four
-    calibration inputs are what would tell you if that's wrong.
+    These are NOT weighted equally — a finding from Milestone 4's
+    calibration run. Most ordinary writing, human or AI, uses zero
+    semicolons/dashes/colons, and flipping a zero density into "very AI-ish"
+    was dragging plainly human paragraphs upward on that basis alone.
+    Absence of rare punctuation is weak evidence either way, so it counts for
+    less than the other two:
+
+        sentence_length_spread   weight 0.45
+        type_token_ratio         weight 0.45
+        punctuation_density      weight 0.10
     """
     spread = min(sentence_length_spread(text), 1.2) / 1.2
     ttr = min(type_token_ratio(text), 1.0)
@@ -139,7 +146,7 @@ def style_signal(text: str) -> float:
     ai_from_ttr = 1.0 - ttr
     ai_from_punct = 1.0 - punct
 
-    score = (ai_from_spread + ai_from_ttr + ai_from_punct) / 3.0
+    score = 0.45 * ai_from_spread + 0.45 * ai_from_ttr + 0.10 * ai_from_punct
     return round(min(max(score, 0.0), 1.0), 4)
 
 

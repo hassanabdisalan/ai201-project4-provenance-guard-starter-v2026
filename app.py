@@ -223,11 +223,11 @@ def submit():
     model_score = detector.model_signal(text)
     style_score = stylometry.style_signal(text)
     combined_score = scoring.combine_signals(model_score, style_score)
+    guess, label = scoring.score_to_label(combined_score)
 
-    # Milestone 5 replaces these with the real guess and label text.
-    guess = "unsure"
-    confidence = 0.0
-    label = "PLACEHOLDER — labeling isn't built yet (Milestone 5)."
+    # How far the combined score sits from the undecided midpoint — 0 at
+    # dead center, 1 at either extreme. Independent of which band it lands in.
+    confidence = round(min(max(abs(combined_score - 0.5) * 2, 0.0), 1.0), 4)
 
     audit.log_decision(
         content_id=content_id,
@@ -271,13 +271,36 @@ def appeal():
     wrong accusation and nothing at all.
     """
     payload = request.get_json(silent=True) or {}
+    content_id = payload.get("content_id")
+    reasoning = payload.get("reasoning")
 
-    # TODO: delete this and build the route.
+    if not isinstance(content_id, str) or not content_id.strip():
+        return jsonify({
+            "error": "bad_request",
+            "message": "content_id is required and must be a non-empty string.",
+        }), 400
+
+    if not isinstance(reasoning, str) or not reasoning.strip():
+        return jsonify({
+            "error": "bad_request",
+            "message": "reasoning is required and must be a non-empty string.",
+        }), 400
+
+    prior_entries = audit.entries_for(content_id)
+    if not prior_entries:
+        return jsonify({
+            "error": "not_found",
+            "message": f"No submission found with content_id '{content_id}'.",
+        }), 404
+
+    creator_id = prior_entries[0].get("creator_id", "unknown")
+    audit.log_appeal(content_id=content_id, creator_id=creator_id, reasoning=reasoning)
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /appeal isn't built yet — see the TODO in app.py.",
-        "you_sent": payload,
-    }), 501
+        "ok": True,
+        "content_id": content_id,
+        "status": "under_review",
+    })
 
 
 # ── Already works ─────────────────────────────────────────────────────────────
