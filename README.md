@@ -130,12 +130,23 @@
 ```bash
 $ curl -X POST http://127.0.0.1:5000/submit \
   -H "Content-Type: application/json" \
-  -d '{"text": "...", "creator_id": "..."}'
+  -d '{"text": "I almost did not go to the party, but Maria texted me a dumb meme at the last second.", "creator_id": "hassan"}'
 ```
 
 ```json
-
+{
+  "confidence": 0.0,
+  "content_id": "2ca105d2-1f79-4d51-9e83-5450262da330",
+  "guess": "unsure",
+  "label": "PLACEHOLDER — scoring isn't built yet (Milestone 4/5).",
+  "model_score": 0.3521,
+  "style_score": null
+}
 ```
+
+<!-- Milestone 3: only the model signal is wired in, so style_score is still
+     null and guess/confidence/label are placeholders. Milestone 4 adds the
+     style signal and the combined score; Milestone 5 adds the real label. -->
 
 **An appeal**
 
@@ -156,8 +167,26 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 ```
 
 ```json
-
+{
+  "count": 1,
+  "entries": [
+    {
+      "combined_score": null,
+      "content_id": "2ca105d2-1f79-4d51-9e83-5450262da330",
+      "creator_id": "hassan",
+      "guess": "unsure",
+      "label": "PLACEHOLDER — scoring isn't built yet (Milestone 4/5).",
+      "model_score": 0.3521,
+      "status": "decided",
+      "style_score": null,
+      "timestamp": "2026-10-28T23:07:04+00:00"
+    }
+  ]
+}
 ```
+
+<!-- The appeal sample and its log entry go here once /appeal is built in
+     Milestone 5. -->
 
 ---
 

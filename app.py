@@ -200,16 +200,47 @@ def submit():
     a malformed input is one of the most common real failures there is.
     """
     payload = request.get_json(silent=True) or {}
+    text = payload.get("text")
+    creator_id = payload.get("creator_id")
 
-    # TODO: delete this and build the route.
+    if not isinstance(text, str) or not text.strip():
+        return jsonify({
+            "error": "bad_request",
+            "message": "text is required and must be a non-empty string.",
+        }), 400
+
+    if len(text) > config.MAX_TEXT_CHARS:
+        return jsonify({
+            "error": "bad_request",
+            "message": f"text is too long — max {config.MAX_TEXT_CHARS} characters.",
+        }), 400
+
+    import detector
+
+    content_id = str(uuid.uuid4())
+    model_score = detector.model_signal(text)
+
+    # Milestone 4 replaces these with the combined score and the real label.
+    guess = "unsure"
+    confidence = 0.0
+    label = "PLACEHOLDER — scoring isn't built yet (Milestone 4/5)."
+
+    audit.log_decision(
+        content_id=content_id,
+        creator_id=creator_id,
+        guess=guess,
+        model_score=model_score,
+        label=label,
+    )
+
     return jsonify({
-        "error": "not_implemented",
-        "message": "POST /submit isn't built yet — see the TODO in app.py.",
-        "you_sent": {
-            "text_length": len(payload.get("text", "")),
-            "creator_id": payload.get("creator_id"),
-        },
-    }), 501
+        "content_id": content_id,
+        "guess": guess,
+        "confidence": confidence,
+        "label": label,
+        "model_score": model_score,
+        "style_score": None,
+    })
 
 
 @app.post("/appeal")
