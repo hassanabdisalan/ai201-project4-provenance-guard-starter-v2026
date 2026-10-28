@@ -39,7 +39,13 @@
 <!-- The path a submission takes, from arriving to the label a reader sees.
      Six or seven steps — this is the trace you wrote in Milestone 1. -->
 
-
+1. **Arrival** — `POST /submit` receives JSON `{text, creator_id}`. The route checks that `text` exists, isn't empty, and isn't absurdly long.
+2. **Identity** — a `content_id` (uuid) is minted for this submission so every later step (the log, an appeal) can refer back to it.
+3. **Signal one** — `detector.model_signal(text)` runs the text through a local language model and turns its perplexity into a 0–1 `model_score`.
+4. **Signal two** — `stylometry.style_signal(text)` measures sentence-length spread, vocabulary repetition, and punctuation density, and turns them into a 0–1 `style_score`.
+5. **Combine** — `scoring.combine_signals(model_score, style_score)` merges the two into one 0–1 `combined_score`.
+6. **Label** — `scoring.score_to_label(combined_score)` turns the number into a short machine-readable `guess` and a full sentence a reader can understand.
+7. **Record and respond** — `audit.log_decision(...)` writes the content_id, both raw signal scores, the combined score, and the label to the append-only log; the same fields come back in the response.
 
 ---
 
@@ -53,19 +59,19 @@
 
 ### Signal one — the model signal
 
-**What it measures:**
+**What it measures:** How predictable the text is to a small local language model (gpt2), expressed as perplexity and squashed into a 0–1 score where higher means more likely AI.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** A language model writes by repeatedly picking a likely next word, so text it produced tends to be text it also finds easy to predict. Human writing wanders more — odd word choices, abrupt turns, the specific rather than the typical — which reads as more surprising to the model.
 
-**What it can't see:**
+**What it can't see:** Predictability is not the same thing as authorship. The signal rewards common words in short, ordinary sentences — which is also how someone writing in a second language, a younger writer, or anyone writing plainly on purpose writes. It also runs backwards on dense, ornate prose: rare words are exactly what the model fails to predict, so formal writing often reads as "human" even when a model wrote it. The writers this signal is most likely to accuse are the ones with the least room to argue back.
 
 ### Signal two — the style signal
 
-**What it measures:**
+**What it measures:** The shape of the text rather than its meaning — how much sentence length varies, how much the vocabulary repeats (type-token ratio), and how dense the punctuation is.
 
-**Why that might differ between human and AI writing:**
+**Why that might differ between human and AI writing:** Generated prose tends toward even, mid-length sentences and a narrower band of vocabulary, because that's what "most likely next word" produces on average. Human writing is lumpier — a three-word sentence next to a forty-word one, vocabulary that drifts rather than repeats evenly.
 
-**What it can't see:**
+**What it can't see:** This signal cannot read. It has no idea what the text says, only its shape. Anything that changes the shape without changing the substance moves the score — adding typos, breaking up sentences, pasting in a quotation. That's a cheap thing for someone to do on purpose, which makes this signal easy to game.
 
 ### The combining rule
 
