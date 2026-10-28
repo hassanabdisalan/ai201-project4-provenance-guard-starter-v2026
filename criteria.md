@@ -42,63 +42,67 @@ Two things worth knowing before you pick numbers:
   a **miss**.
 
 ---
-## 1.
+## 1. False positives
 
-<!-- Your criterion. It must name a number. -->
+Of 10 submissions that are plain, honest writing I wrote myself, at most 1 may
+come back labeled "high-confidence AI".
 
-
-
-**Why this target:**
-
-
-
----
-
-## 2.
-
-<!-- Your criterion. -->
-
-
-
-**Why this target:**
-
-
+**Why this target:** On a writing site, a wrong accusation costs the writer
+real standing and has no easy way to disprove; a missed piece of AI text just
+costs the site one ungraded case. The expensive mistake is one-sided, so the
+target for the costly direction has to be the tight one.
 
 ---
 
-## 3.
+## 2. Score spread
 
-<!-- Your criterion. -->
+Clearly-AI text (straight model output, unedited) and clearly-human text
+(something plainly written, in my own words) must differ in `combined_score`
+by at least 0.4, across all three trials.
 
-
-
-**Why this target:**
-
-
-
----
-
-## 4.
-
-<!-- Your criterion. -->
-
-
-
-**Why this target:**
-
-
+**Why this target:** If the two obvious ends of the spectrum don't separate by
+a wide margin, the signals aren't measuring anything real, and the whole
+threshold band in between — where the hard cases live — is meaningless. 0.4 is
+most of the 0–1 range, which is the bar a signal worth trusting should clear.
 
 ---
 
-## 5.
+## 3. Label coverage
 
-<!-- Your criterion. -->
+Each of the three labels — high-confidence human, unsure, high-confidence AI —
+is actually produced by at least one real piece of text I submit, not just
+mathematically reachable in `config.py`.
 
+**Why this target:** A label that exists in the code but that no real
+submission ever lands on isn't a working feature, it's a gap dressed up to
+look like one. If I can't find text that produces it, a user never will
+either, and the label is dead weight.
 
+---
 
-**Why this target:**
+## 4. The appeal path
 
+Every call to `/appeal` with a valid `content_id` changes that entry's status
+to `under_review` and writes exactly one new log line, in 5 out of 5 tries.
 
+**Why this target:** This is the only thing standing between a wrong
+accusation and nothing at all for the person on the receiving end. It has to
+work every single time I try it — a safety valve that works sometimes isn't
+one a writer can rely on, and "sometimes" is not a number I'm willing to
+accept here.
+
+---
+
+## 5. Bad input
+
+Submitting `text` that is missing, empty, or roughly 50,000 words never
+returns a 500 — it returns a 4xx with a clear reason, in 3 out of 3 tries for
+each case.
+
+**Why this target:** A crash on malformed input looks exactly like an outage
+to the person who sent it, and gives them nothing to act on. These are also
+the first inputs an attacker — or just a careless script — would try, so this
+is the cheapest failure to prevent and the most embarrassing one to ship.
 
 ---
 
