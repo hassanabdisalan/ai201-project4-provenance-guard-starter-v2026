@@ -748,7 +748,113 @@ Criterion 4 (appeal path), one of fifteen, produced by
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
+All five of my own criteria came back MET across all three trials (see the
+table above). There's nothing to diagnose there as a miss, but I don't
+think "all five passed" is the whole story — see **If you held
+everything**, below. The real diagnostic work this unit is the 11
+attacks that broke in the Milestone 2 run (6 full, 5 partial), and they
+are not 11 separate problems.
 
+**Pattern 1 — 9 of 10 evasion attacks: the combining rule's weights let a
+gameable signal outvote a harder one.**
+
+| ID | targets | model_score | style_score | gap | landed |
+|---|---|---|---|---|---|
+| EV01 | typos → word variety | 0.1635 | 0.5333 | 0.3698 | human |
+| EV02 | broken sentences → length spread | 0.5943 | 0.2557 | 0.3386 | human |
+| EV03 | pasted quotation | 0.6662 | 0.4323 | 0.2339 | unsure |
+| EV04 | unusual words → perplexity | 0.6114 | 0.5132 | 0.0982 | unsure |
+| EV06 | one long + one short sentence | 0.5727 | 0.2178 | 0.3549 | unsure |
+| EV07 | punctuation padding | 0.5862 | 0.5521 | 0.0341 | unsure |
+| EV09 | human opener bolted on | 0.7042 | 0.4323 | 0.2719 | unsure |
+
+The baseline version of this exact paragraph (no edits) scores
+`model_score ≈ 0.886`, `style_score ≈ 0.68`, `combined ≈ 0.76` — solidly
+`ai`. Every row above is the same text, lightly altered, and every one
+moved at least one signal substantially: typos and rare words raise
+perplexity (signal one reads it as less predictable, i.e. more human);
+broken sentences, pasted quotes, and padding all raise
+`stylometry.sentence_length_spread` or disrupt its shape (signal two reads
+it as more varied, i.e. more human). That's expected — Milestone 1 named
+both of these as the exact blind spots to watch.
+
+What turns seven individual evasions into one pattern is
+`scoring.py::combine_signals`'s weights: `WEIGHT_STYLE_SIGNAL = 0.5` against
+`WEIGHT_MODEL_SIGNAL = 0.35`. Signal two is also the easier of the two to
+manipulate with a surface edit — nothing about a typo or an added line break
+changes what the text *means*, only its shape, and shape is all signal two
+measures. Giving the more gameable signal the larger weight means a
+style-side drop is often enough to carry the whole score down on its own.
+
+The disagreement-dampening rule exists specifically to catch cases where
+the two signals disagree — but every gap in the table above is under my
+0.4 threshold (the widest is 0.3698). The rule that was supposed to be the
+safety net against exactly this kind of disagreement never once engaged,
+because these attacks are tuned to move the signals just enough to swing
+the *weighted average*, not far enough to trip the *disagreement* check.
+**Stage: the combining rule (interacting with signal two).** **Mechanism:**
+style_signal is both the more gameable signal and the more heavily
+weighted one, and the dampening rule's 0.4 threshold is wide enough that
+moderate, single-signal manipulation slips under it entirely.
+
+Two evasion attacks don't fit that pattern and get their own line:
+
+- `EV05` (a genuine, heavy human rewrite of the same content) landed
+  `human` — correctly, in my view. Once a human has rewritten something
+  enough that it no longer resembles the source text structurally or
+  lexically, it's reasonable for the system to read it as human, because
+  at that point it functionally is a new piece of writing. Not a bug to
+  fix; a real limit of what provenance detection can mean once editing
+  passes a certain threshold.
+- `EV08` (text just below signal one's comfortable range) landed `human`
+  with `model_score = 0.2452` — lower than I expected for boilerplate
+  phrasing. **Stage: signal one.** **Mechanism:** perplexity over very few
+  tokens is a noisy estimate (the loss is an average over however many
+  tokens exist, and two sentences' worth gives the average little to
+  stabilize on), and this instance happened to land on the human-reading
+  side of that noise. Different from the pattern above — nothing here was
+  deliberately reshaped, the attack just found signal one's blind spot at
+  the opposite end of length from the 60,000-character case in Milestone 2.
+
+**Pattern 2 — the 2 crashes are both unvalidated assumptions about input
+shape, not scoring bugs.**
+
+- `MF02` (single-character text): `detector.perplexity` raises
+  `ValueError("Text is too short to score...")` for fewer than 3 tokens,
+  and `app.py::submit` never catches it, so Flask's debug mode returns a
+  raw traceback as a 500. **Stage: the route (missing exception handling
+  around signal one).**
+- `RQ07` (a JSON array body): `payload = request.get_json(silent=True) or
+  {}` only substitutes `{}` when the parsed body is falsy — a non-empty
+  list is truthy, so `payload` stays a list, and the next line's
+  `payload.get("text")` raises `AttributeError` because lists have no
+  `.get`. **Stage: the route (missing a type check on the parsed body).**
+
+Different triggers, same root cause: **the route validates that `text` is
+a non-empty string, but never validates that the parsed body is a dict at
+all, or that calling signal one won't raise.** One defensive check at the
+top of `submit()` — confirm `isinstance(payload, dict)` before doing
+anything else, and wrap the signal calls — would close both at once rather
+than patching them as two unrelated bugs.
+
+Both crashes also leave **no audit log entry** — `audit.log_decision` is
+never reached, so a crash is invisible in the one place I'd look to find
+one. That's the same "an attack that shows up only as an absence" problem
+Milestone 1 named for rate-limit rejections, just showing up at a different
+stage.
+
+**If you held everything** — I didn't; 11 of 56 attacks broke. But I also
+don't think all five of my own criteria passing means my targets were
+right. Criterion 1 (false positives) came back 0/10 — comfortably inside
+"at most 1 of 10" — but 6 of those 10 landed `unsure` rather than `human`.
+The criterion only checks the `ai` bucket, so it couldn't have caught that
+even if every single one of my own plain paragraphs had landed `unsure`.
+**The criterion I'd tighten is #1**, to also bound how often my own
+writing fails to land confidently `human` — something closer to "at most 1
+of 10 unsure or worse," not just "at most 1 of 10 ai." As written, it's
+real but it's an easy target: it only screens for the most severe failure
+and says nothing about the much more common lesser one sitting right next
+to it in this same run.
 
 ---
 
