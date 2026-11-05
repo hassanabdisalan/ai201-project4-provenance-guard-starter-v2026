@@ -151,7 +151,7 @@ def health():
 # ── YOU BUILD THIS ────────────────────────────────────────────────────────────
 
 @app.post("/submit")
-# @limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
+@limiter.limit(f"{config.RATE_LIMIT_PER_MINUTE}/minute;{config.RATE_LIMIT_PER_DAY}/day")
 def submit():
     """
     Take a piece of text, decide about it, log the decision, answer.
@@ -204,12 +204,21 @@ def submit():
     creator_id = payload.get("creator_id")
 
     if not isinstance(text, str) or not text.strip():
+        audit.log_rejection(
+            creator_id=creator_id or "unknown",
+            reason="missing_or_empty_text",
+        )
         return jsonify({
             "error": "bad_request",
             "message": "text is required and must be a non-empty string.",
         }), 400
 
     if len(text) > config.MAX_TEXT_CHARS:
+        audit.log_rejection(
+            creator_id=creator_id or "unknown",
+            reason="text_too_long",
+            text_length=len(text),
+        )
         return jsonify({
             "error": "bad_request",
             "message": f"text is too long — max {config.MAX_TEXT_CHARS} characters.",
@@ -282,12 +291,18 @@ def appeal():
     reasoning = payload.get("reasoning")
 
     if not isinstance(content_id, str) or not content_id.strip():
+        audit.log_rejection(creator_id="unknown", reason="appeal_missing_content_id")
         return jsonify({
             "error": "bad_request",
             "message": "content_id is required and must be a non-empty string.",
         }), 400
 
     if not isinstance(reasoning, str) or not reasoning.strip():
+        audit.log_rejection(
+            creator_id="unknown",
+            reason="appeal_missing_reasoning",
+            content_id=content_id,
+        )
         return jsonify({
             "error": "bad_request",
             "message": "reasoning is required and must be a non-empty string.",
@@ -295,6 +310,11 @@ def appeal():
 
     prior_entries = audit.entries_for(content_id)
     if not prior_entries:
+        audit.log_rejection(
+            creator_id="unknown",
+            reason="appeal_unknown_content_id",
+            content_id=content_id,
+        )
         return jsonify({
             "error": "not_found",
             "message": f"No submission found with content_id '{content_id}'.",

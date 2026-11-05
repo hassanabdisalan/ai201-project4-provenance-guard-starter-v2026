@@ -103,16 +103,26 @@ VERIFICATION_PHRASE = "I attest this is my own writing"
 
 
 # ─── Rate limiting (UNIT 8) ──────────────────────────────────────────────────
-# Off in unit 7. You turn it on and choose the numbers in unit 8, Milestone 1.
+# Off in unit 7. On starting unit 8, Milestone 1.
 #
 # Think about two people: a real writer submitting their own work a few times
 # an hour, and a script sending a thousand variations to map your thresholds.
 # Your README has to say why your numbers and not others.
+#
+# 8/minute: a writer actively revising — proofread, tweak, resubmit — tops out
+# around 4-5 submissions in a tight burst in my own testing. 8 gives headroom
+# above that without being wide enough for a script to map more than a
+# handful of inputs per minute.
+#
+# 150/day: generous for even a heavy drafting day (dozens of real
+# submissions), but it caps a script that evades the per-minute limit by
+# trickling requests slowly — 150 attempts a day to map thresholds is still
+# a weak attack, not a free one.
 
-RATE_LIMITING_ENABLED = os.getenv("AI201_RATE_LIMITS", "0") == "1"
+RATE_LIMITING_ENABLED = os.getenv("AI201_RATE_LIMITS", "1") == "1"
 
-RATE_LIMIT_PER_MINUTE = 10
-RATE_LIMIT_PER_DAY = 200
+RATE_LIMIT_PER_MINUTE = 8
+RATE_LIMIT_PER_DAY = 150
 
 # Flask-Limiter warns loudly without this. In-memory is right for one laptop
 # and wrong for anything real — a restart forgets every count, and two copies

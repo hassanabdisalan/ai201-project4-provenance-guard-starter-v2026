@@ -454,25 +454,61 @@ for an unverified creator submitting the identical text:
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 8 per minute, 150 per day
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+A writer actively revising — proofread, tweak, resubmit — tops out around
+4-5 submissions in a tight burst in my own testing. 8/minute gives headroom
+above that without being wide enough for a script to map more than a
+handful of threshold-probing inputs per minute. 150/day is generous for
+even a heavy drafting day (dozens of real submissions across many sessions),
+but it caps a script that tries to dodge the per-minute limit by trickling
+requests slowly all day — 150 attempts to map thresholds is still a weak
+attack, not a free one.
+
+**What a caller counts as:** Per `creator_id`, falling back to the caller's
+IP address only when `creator_id` is missing or not a string
+(`app.py::rate_limit_key`). I chose `creator_id` over address on purpose: an
+address-based limit means one household or one shared campus network looks
+like a single caller and gets throttled together, while a script can rotate
+through IP addresses (or sit behind different ones) and look like a
+thousand different callers. `creator_id` is cheap for an attacker to spoof,
+but it's also the identity the rest of the system already reasons about —
+the audit log, `/appeal`, and the verified-human path all key on it too — so
+rate limiting on the same identity keeps "who counts as whom" consistent
+across the whole service rather than introducing a second notion of caller
+identity just for this one check.
 
 **The run of status codes when I pushed past it:**
 
-<!-- python run_attacks.py --flood 15 -->
-
+```bash
+$ python run_attacks.py --flood 15
 ```
 
 ```
+  [ 1/15] 200
+  [ 2/15] 200
+  [ 3/15] 200
+  [ 4/15] 200
+  [ 5/15] 200
+  [ 6/15] 200
+  [ 7/15] 200
+  [ 8/15] 200
+  [ 9/15] 429
+  [10/15] 429
+  [11/15] 429
+  [12/15] 429
+  [13/15] 429
+  [14/15] 429
+  [15/15] 429
+
+200 200 200 200 200 200 200 200 429 429 429 429 429 429 429
+```
+
+7 of 15 were rate limited — exactly the 8/minute cap. `GET /log` confirms
+each rejection was recorded (see **Attack Run** below and the audit log
+entries pasted there).
 
 ---
 
