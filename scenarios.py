@@ -20,6 +20,14 @@ A scenario carries **either** of these:
               when the malformed request IS the point — empty text, no `text`
               field at all, something enormous. A bad-input criterion needs it,
               because you cannot express "the field is missing" as a string.
+
+Criterion 4 (the appeal path) can't be tested by sending text alone — it
+needs a submission first, then an appeal against the content_id that came
+back. `run_eval.py`'s scenario shape has no place for that two-step flow, so
+it's tested separately by `eval_appeal.py` (3 trials of 5 appeals each,
+matching the "5 out of 5 tries" target), not through this file. That's a
+deliberate choice, not an oversight — see the README's Run Log and
+Verdicts section for how it's run and what came back.
 """
 
 SCENARIOS = [
@@ -30,41 +38,57 @@ SCENARIOS = [
         # things you actually wrote. This is the criterion that matters most and
         # it's meaningless with someone else's prose.
         "texts": [
-            "REPLACE ME with a paragraph you wrote yourself.",
-            "REPLACE ME with another one. Ten pieces is the usual number.",
+            "I went for a run this morning before it got too hot. Legs felt heavy for the first mile, then it evened out. Saw the same guy walking his dog by the bridge, like always.",
+            "My desk is a mess right now. There's a coffee cup from Tuesday I keep meaning to wash, three notebooks I only use the first ten pages of, and a charger cable that belongs to a phone I don't own anymore.",
+            "The bus was late again. I stood there for twenty minutes watching the little countdown on the sign go from 4 minutes to 9 minutes to 2 minutes, which doesn't make any sense but happens every single week.",
+            "I tried a new recipe last night, a lentil soup thing. Put in too much cumin, not enough salt. Still ate two bowls of it anyway because I was hungry and didn't want to cook anything else.",
+            "My sister called while I was in the middle of fixing a leaky faucet, and I answered with wet hands and regretted it immediately. We talked for forty minutes. The faucet is still leaking.",
+            "Grading these submissions is slower than I expected. I keep having to stop and reread the same paragraph three times before I'm sure what the student was actually arguing.",
+            "I forgot my umbrella again. Walked the last six blocks home in the rain, which was fine until my shoes started squeaking with every step and a stranger laughed at me at a crosswalk.",
+            "We rearranged the living room over the weekend. The couch is in a spot that makes no sense now that I look at it in daylight, but moving it back feels like admitting defeat.",
+            "I've been meaning to learn to play the guitar sitting in the corner of my room for about two years now. I pick it up maybe once a month, play the same four chords badly, and put it back down.",
+            "The neighbor's cat has decided our porch is its porch now. It just sits there staring through the glass door until someone opens it, then walks in like it owns the place.",
+        ],
+    },
+    {
+        "name": "score spread",
+        "criterion": 2,
+        # Clearly-AI and clearly-human, far enough apart that combined_score
+        # should separate them by at least the 0.4 target in criteria.md.
+        "texts": [
+            "The implementation of the proposed framework requires careful consideration of several key factors. First, it is important to note that the system must be able to handle a wide variety of different inputs. Additionally, the overall performance of the solution depends on a number of important variables.",
+            "Rain. That's the first thing I remember about the day we moved into the lopsided little house on Carver Street, water sheeting off the gutterless roof in sheets thick enough to blur the moving truck into a smear of orange. Dad cursed. Mom laughed, which she almost never did on a bad day, and something about that cracked the tension wide open. We hauled boxes for six hours straight, soaked to the bone, and ate cold pizza sitting on upturned crates because the table hadn't arrived yet.",
         ],
     },
     {
         "name": "label coverage",
-        "criterion": 2,
-        # Inputs spread across your score range, so you can check all three
-        # labels are actually reachable.
+        "criterion": 3,
+        # Inputs spread across the score range, so all three labels are
+        # actually reachable through a real submission, not just the thresholds
+        # in config.py.
         "texts": [
-            "REPLACE ME with something you're confident is AI-generated.",
-            "REPLACE ME with something you're confident is human-written.",
-            "REPLACE ME with something genuinely borderline.",
+            "The implementation of the proposed framework requires careful consideration of several key factors. First, it is important to note that the system must be able to handle a wide variety of different inputs. Additionally, the overall performance of the solution depends on a number of important variables.",
+            "Rain. That's the first thing I remember about the day we moved into the lopsided little house on Carver Street, water sheeting off the gutterless roof in sheets thick enough to blur the moving truck into a smear of orange. Dad cursed. Mom laughed, which she almost never did on a bad day, and something about that cracked the tension wide open. We hauled boxes for six hours straight, soaked to the bone, and ate cold pizza sitting on upturned crates because the table hadn't arrived yet.",
+            "The committee reviewed the proposal on Tuesday. Members raised concerns about the budget. A revised draft will be submitted next week. The chair thanked everyone for their time and closed the meeting shortly after four o'clock.",
         ],
     },
-    # A bad-input criterion looks like this. Uncomment and adjust if that's one
-    # of your five — these are raw request bodies, sent exactly as written.
-    #
-    # {
-    #     "name": "bad input",
-    #     "criterion": 3,
-    #     "bodies": [
-    #         {"text": "", "creator_id": "eval_bad_empty"},
-    #         {"creator_id": "eval_bad_missing"},          # no text field at all
-    #         {"text": "word " * 50000, "creator_id": "eval_bad_huge"},
-    #         {"text": None, "creator_id": "eval_bad_null"},
-    #     ],
-    # },
-
-    # TODO: add what your remaining criteria need.
-    #
-    # A criterion about the appeal path can't be tested by sending text alone;
-    # it needs a submission first and then an appeal against the content_id
-    # that came back. You'll need to test that one by hand, or extend this file
-    # and run_eval.py to do it. Saying which you did is part of the write-up.
+    {
+        "name": "bad input",
+        "criterion": 5,
+        # 3 tries for each of the three malformed cases named in criteria.md:
+        # missing text, empty text, and an oversized submission.
+        "bodies": [
+            {"creator_id": "eval_bad_missing_1"},
+            {"creator_id": "eval_bad_missing_2"},
+            {"creator_id": "eval_bad_missing_3"},
+            {"text": "", "creator_id": "eval_bad_empty_1"},
+            {"text": "", "creator_id": "eval_bad_empty_2"},
+            {"text": "", "creator_id": "eval_bad_empty_3"},
+            {"text": "word " * 50000, "creator_id": "eval_bad_huge_1"},
+            {"text": "word " * 50000, "creator_id": "eval_bad_huge_2"},
+            {"text": "word " * 50000, "creator_id": "eval_bad_huge_3"},
+        ],
+    },
 ]
 
 
