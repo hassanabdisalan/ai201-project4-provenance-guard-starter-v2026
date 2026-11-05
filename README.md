@@ -324,6 +324,28 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
   lightly-edited AI slightly, rather than tuning the numbers until the test
   case I liked came out looking good.
 
+**Moment 4**
+
+- *What I asked for:* After Milestone 5's reweight, `run_attacks.py`
+  showed `FP04` had flipped from `unsure` to `ai` — a genuine human essay
+  now wrongly accused — and I asked for help tracing exactly why, since
+  neither `model_score` nor `style_score` alone had changed between runs.
+- *What came back:* The combined score had moved because `phrase_score`
+  wasn't 0 for `FP04` the way I'd assumed — its closing sentence ("In
+  conclusion, the conflict cannot be explained by any single factor.")
+  matches an entry in `phrasing.py`'s stock-phrase list, giving it
+  `phrase_score ≈ 0.49`. Recomputing `combine_signals` by hand with the
+  old weights versus the new ones showed the exact crossing point: 0.614
+  (unsure) before, 0.665 (just past the `ai` threshold) after.
+- *What I changed:* Nothing in the code — this was a diagnosis, not a
+  fix, and the milestone's one-change rule meant I'd already spent this
+  unit's change on the reweight. What I changed was the write-up: instead
+  of reporting the reweight as a clean win because total "full break"
+  counts stayed flat (6 before, 6 after), I reported it as a relocation of
+  harm from a missed evasion to a false accusation, which the numbers
+  alone would have hidden if I hadn't gone looking for what specifically
+  moved `FP04`.
+
 ---
 
 ## Stretch Features
@@ -332,9 +354,11 @@ $ curl "http://127.0.0.1:5000/log?limit=3"
 
 See **Signals and Scoring** above — `phrasing.py::phrase_signal` is the third
 signal (a fixed list of AI-stock phrases, rate per 100 words), weighted at
-`WEIGHT_PHRASE_SIGNAL = 0.15` against `0.35` for the model signal and `0.5`
-for the style signal in `scoring.py::combine_signals`. It's weighted lowest
-because it's a fixed list and the easiest of the three to defeat on purpose.
+`WEIGHT_PHRASE_SIGNAL = 0.15` in `scoring.py::combine_signals` (as of unit 8,
+`WEIGHT_MODEL_SIGNAL = 0.5` and `WEIGHT_STYLE_SIGNAL = 0.35` — see **The
+Improvement** below for why that pair changed from unit 7's 0.35/0.5). The
+phrase signal is weighted lowest of the three throughout, because it's a
+fixed list and the easiest to defeat on purpose.
 
 ### `GET /content/<id>`
 
@@ -945,14 +969,78 @@ signals at once.
 <!-- For each attack still getting through and each criterion still missed:
      what you'd do, and why you stopped. -->
 
+No criterion is still missed — all five held, both before and after the
+reweight. Everything below is about the attacks that still get through, or
+that the reweight made worse.
 
+**`FP04` — the false accusation the reweight introduced.** I'd lower
+`WEIGHT_PHRASE_SIGNAL` further, or give the phrase signal its own small
+"this text is otherwise plain human writing" exemption, so one stock
+phrase in an otherwise ordinary essay can't help tip a borderline case
+into `ai`. I stopped here because Milestone 5's rule was one change,
+measured cleanly — fixing this now would be a second, uncontrolled
+variable in the same comparison. It's the first thing I'd do in a next
+pass, before touching anything else below.
+
+**The remaining evasion attacks (`EV01`, `EV03`, `EV04`, `EV06`, `EV07`,
+`EV09`) — still full or partial evasions.** All six still move
+`style_score` or `model_score` through surface edits that stay under the
+0.4 disagreement threshold, exactly as diagnosed in Milestone 4 — the
+reweight changed *how much* each signal counts, not *how easy* either one
+is to manipulate. A deeper fix would need a signal that doesn't move with
+surface shape at all — something closer to semantic consistency checking —
+which is well beyond a one-signal reweight and out of scope for this unit.
+A smaller, more scoped next step: lower the 0.4 disagreement threshold
+itself (say, to 0.2), so moderate single-signal manipulation trips the
+dampening rule instead of sliding under it. I didn't make that change here
+because I'd already used this unit's one allowed change on the reweight,
+and testing two changes in the same run would make it impossible to say
+which one caused which effect.
+
+**The two crashes (`MF02`, `RQ07`) — unfixed.** I diagnosed both back in
+Milestone 4 (missing `isinstance(payload, dict)` and exception handling
+around signal one in `app.py::submit`) but chose the combining-rule
+reweight as this unit's one change instead, because it addressed nine
+attacks instead of two. I'd fix these next — they're the cheapest, most
+unambiguous fix available, and they're also the only "broke" outcomes that
+leave zero audit trail, which makes them the ones I'd most want closed
+before anything else ships.
+
+**The non-Latin-script blind spot (`MF07`, and `MF06`) — unfixed.**
+Traced in Milestone 2 to `stylometry.words()`'s `[a-z0-9']`-only regex,
+which zeroes out every style measure for non-Latin text and pushes all
+three to their most-AI-reading edge case at once. The real fix is a
+Unicode-aware word boundary (e.g. `\w` with the `UNICODE` flag) across all
+three style functions, which touches more of `stylometry.py` than a
+one-line patch and needs its own recalibration against the four reference
+inputs — more than this milestone's scope, but the most serious unfixed
+issue in the whole project, because it doesn't just fail occasionally, it
+fails *systematically* against an entire category of real writers.
+
+**The softening trend in criterion 1.** 6/10 of my own plain writing
+landed `unsure` before the reweight; 7/10 after. Still inside "at most 1
+of 10 labeled ai," so the criterion as written is MET both times, but the
+trend is moving the wrong way. I'd tighten the criterion itself (as named
+in Milestone 4) before trying to fix the underlying behavior, since right
+now I don't have a target that would even tell me if a future change made
+this better or worse.
 
 **The trade I'd make if this ran for real:**
 
 <!-- Two sentences. Fewer wrong accusations means more AI text getting through.
      Say which way you'd go and WHO PAYS FOR IT. -->
 
-
+I'd revert Milestone 5's reweight and go back toward the style-heavy
+split, accepting that more AI text slides into "unsure" or even "human"
+unflagged, because Milestone 1's plain-writer finding and this unit's
+`FP04` both show the same thing happening on the model-signal side: a real
+writer — disproportionately one who writes plainly, formulaically, or in a
+second language — pays for every point of weight the model signal gains,
+in the form of a false accusation they have no easy way to disprove. The
+people who pay for the alternative — more undetected AI submissions — are
+the ones reading the writer's work, which is a real cost but a
+distributed and recoverable one, not a reputational one borne by a single
+person with their name on it.
 
 <!-- ═════════════════════════════════════════════════════════════════════
 
