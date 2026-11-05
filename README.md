@@ -962,6 +962,74 @@ reopens exactly the failure mode that earlier decision existed to guard
 against. A single-axis reweight can't fix a problem that lives in both
 signals at once.
 
+### A second improvement (stretch) — input validation at the route
+
+<!-- Declared here, built, and measured the same way as the first. -->
+
+**What I changed:** Two defensive checks in `app.py::submit`, the ones
+Milestone 4 diagnosed as Pattern 2 but Milestone 5 didn't have scope for:
+
+1. Before touching the parsed body at all, confirm it's a dict. A non-empty
+   JSON array is truthy, so the old `request.get_json(silent=True) or {}`
+   let it through; the next line's `.get("text")` then raised
+   `AttributeError` because lists have no `.get`. Now a non-dict body
+   returns a 400 immediately.
+2. Wrapped the call to `detector.model_signal` in a `try/except ValueError`.
+   `detector.perplexity` raises on fewer than 3 tokens; previously that
+   propagated uncaught into Flask's debug handler and came back as a raw
+   HTML traceback with a 500. Now it returns the same 400 shape as every
+   other bad-input case.
+
+No scoring code changed — this is purely about the route refusing bad
+shapes before either signal ever sees them.
+
+**Which diagnosis pointed at it:** Pattern 2 from Milestone 4 — both
+crashes (`MF02`, `RQ07`) were the route trusting unvalidated assumptions
+about input shape, not two unrelated bugs.
+
+**Re-run:**
+[`results/attack_run_2026-11-05_0401_after2.md`](results/attack_run_2026-11-05_0401_after2.md)
+and
+[`results/run_2026-11-05_0401_after2.md`](results/run_2026-11-05_0401_after2.md).
+Diffing this run against the Milestone 5 "after" run attack-by-attack:
+**exactly two rows changed, and nothing else moved.**
+
+| ID | Milestone 5 (after) | This run (after2) |
+|---|---|---|
+| `MF02` | `500` (uncaught `ValueError`) | `400` — "text is too short to score" |
+| `RQ07` | `500` (uncaught `AttributeError`) | `400` — "Request body must be a JSON object." |
+
+**By family, this run:**
+
+| Family | Attacks | HELD | BROKE (full) | BROKE (partial) |
+|---|---|---|---|---|
+| `evasion` | 10 | 1 | 3 | 6 |
+| `false_positive` | 8 | 7 | 1 | 0 |
+| `flood_same_creator` | 12 | 12 | 0 | 0 |
+| `malformed` | 20 | 20 | 0 | 0 |
+| `prompt_injection` | 6 | 6 | 0 | 0 |
+| **total** | **56** | **46** | **4** | **6** |
+
+Full breaks: **6 → 4.** Both of this run's fixed rows were crashes, and
+both now also leave a proper audit log entry (`reason:
+"payload_not_an_object"` / `"text_too_short_to_score"`) instead of no
+trace at all — closing the "an attack that shows up only as an absence"
+gap from Milestone 1 for these two cases specifically.
+
+All five criteria re-ran unaffected (`results/run_2026-11-05_0401_after2.md`)
+— none of criterion 5's own bodies (missing/empty/oversized text) happen to
+touch either of the two shapes this fix targets, so my own test suite
+wouldn't have caught either crash on its own. The attack set did; my
+criteria didn't. That gap is worth more than the fix itself.
+
+**Did it help, and how do I know:** Yes, and unambiguously this time —
+unlike Milestone 5, this change didn't trade one failure for another. I
+know because I diffed every one of the 56 attacks between the two runs:
+exactly the two targeted rows moved, in the intended direction, and
+nothing else shifted at all. This is the shape a clean improvement should
+have — the first one wasn't that shape, and knowing the difference is
+most of the point of measuring both.
+
 ---
 
 ## What's Still Broken
@@ -997,14 +1065,11 @@ because I'd already used this unit's one allowed change on the reweight,
 and testing two changes in the same run would make it impossible to say
 which one caused which effect.
 
-**The two crashes (`MF02`, `RQ07`) — unfixed.** I diagnosed both back in
-Milestone 4 (missing `isinstance(payload, dict)` and exception handling
-around signal one in `app.py::submit`) but chose the combining-rule
-reweight as this unit's one change instead, because it addressed nine
-attacks instead of two. I'd fix these next — they're the cheapest, most
-unambiguous fix available, and they're also the only "broke" outcomes that
-leave zero audit trail, which makes them the ones I'd most want closed
-before anything else ships.
+**The two crashes (`MF02`, `RQ07`) — fixed as the second improvement.**
+Diagnosed in Milestone 4, fixed and measured above: both now return `400`
+with a proper audit log entry instead of a `500` with no trace. This is
+the one item from my original "still broken" list I didn't have to leave
+broken.
 
 **The non-Latin-script blind spot (`MF07`, and `MF06`) — unfixed.**
 Traced in Milestone 2 to `stylometry.words()`'s `[a-z0-9']`-only regex,

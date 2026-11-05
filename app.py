@@ -199,7 +199,25 @@ def submit():
     what should this do when `text` is missing, empty, or enormous? A crash on
     a malformed input is one of the most common real failures there is.
     """
-    payload = request.get_json(silent=True) or {}
+    raw_payload = request.get_json(silent=True)
+
+    # UNIT 8, MILESTONE 6 — SECOND IMPROVEMENT. `request.get_json(silent=True)
+    # or {}` only substitutes `{}` when the parsed body is falsy, so a
+    # non-empty JSON array (truthy) used to sail through and crash the next
+    # line's `.get("text")` with an AttributeError (RQ07 in the attack set).
+    # Checking the shape here, before anything downstream assumes it, is the
+    # fix Milestone 4 diagnosed and Milestone 5 didn't have scope for.
+    if raw_payload is None:
+        payload = {}
+    elif not isinstance(raw_payload, dict):
+        audit.log_rejection(creator_id="unknown", reason="payload_not_an_object")
+        return jsonify({
+            "error": "bad_request",
+            "message": "Request body must be a JSON object.",
+        }), 400
+    else:
+        payload = raw_payload
+
     text = payload.get("text")
     creator_id = payload.get("creator_id")
 
@@ -230,7 +248,25 @@ def submit():
     import scoring
 
     content_id = str(uuid.uuid4())
-    model_score = detector.model_signal(text)
+
+    # UNIT 8, MILESTONE 6 — SECOND IMPROVEMENT. `detector.perplexity` raises
+    # ValueError on fewer than 3 tokens (MF02 in the attack set: a single
+    # character). Uncaught, that became a 500 with a debugger traceback.
+    # Validating at the route, before either signal runs, turns it into the
+    # same 400 shape every other bad input already gets.
+    try:
+        model_score = detector.model_signal(text)
+    except ValueError as exc:
+        audit.log_rejection(
+            creator_id=creator_id or "unknown",
+            reason="text_too_short_to_score",
+            detail=str(exc),
+        )
+        return jsonify({
+            "error": "bad_request",
+            "message": "text is too short to score — a few sentences at least.",
+        }), 400
+
     style_score = stylometry.style_signal(text)
     phrase_score = phrasing.phrase_signal(text)
     combined_score = scoring.combine_signals(model_score, style_score, phrase_score)
