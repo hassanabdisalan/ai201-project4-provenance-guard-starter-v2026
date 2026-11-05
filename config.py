@@ -58,9 +58,18 @@ MAX_TEXT_CHARS = 20_000
 # signal layered on top of the required two. It's the easiest of the three to
 # defeat on purpose (see phrasing.py's blind-spot note), so it carries the
 # smallest weight — it nudges the score, it doesn't drive it.
+#
+# UNIT 8, MILESTONE 5 — THE ONE IMPROVEMENT. Was 0.35 / 0.5 / 0.15. Swapped
+# which of the required two carries more weight: 9 of 10 evasion attacks in
+# the Milestone 2 run worked by moving style_score (shape is cheap to fake —
+# typos, broken sentences, padding) while model_score stayed comparatively
+# honest. Weighting the harder-to-fake signal higher should make those same
+# edits buy an attacker less. Everything else (the phrase weight, the 0.4
+# disagreement threshold) is untouched on purpose, so this is the only
+# variable between the before/after attack runs in the README.
 
-WEIGHT_MODEL_SIGNAL = 0.35
-WEIGHT_STYLE_SIGNAL = 0.5
+WEIGHT_MODEL_SIGNAL = 0.5
+WEIGHT_STYLE_SIGNAL = 0.35
 WEIGHT_PHRASE_SIGNAL = 0.15
 
 

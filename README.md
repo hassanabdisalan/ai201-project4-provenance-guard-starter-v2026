@@ -860,22 +860,83 @@ to it in this same run.
 
 ## The Improvement
 
-**What I changed:**
+**What I changed:** Swapped which of the two required signals carries more
+weight in `scoring.py::combine_signals`, in `config.py`:
+`WEIGHT_MODEL_SIGNAL` 0.35 → 0.5, `WEIGHT_STYLE_SIGNAL` 0.5 → 0.35.
+`WEIGHT_PHRASE_SIGNAL` (0.15) and the 0.4 disagreement threshold are
+untouched, so this is the only variable between the before and after runs.
 
-**Which diagnosis pointed at it:**
+**Which diagnosis pointed at it:** Pattern 1 in the Diagnoses section above —
+9 of 10 evasion attacks worked by moving `style_score` (cheap to fake: shape
+is all it measures) while `style_score` was also the more heavily weighted
+of the two. Weighting the harder-to-fake signal higher should make the same
+edits buy an attacker less.
 
 ### Attack Run — After
 
 <!-- Same format. `run_attacks.py --label after` -->
 
+Full run:
+[`results/attack_run_2026-11-05_0354_after.md`](results/attack_run_2026-11-05_0354_after.md).
+Exactly three attacks changed verdict; everything else held at its
+before-run outcome.
 
+| ID | Family | Before | After | What changed |
+|---|---|---|---|---|
+| `EV02` | evasion | BROKE (human) | BROKE (partial, unsure) | combined moved 0.336 → 0.387 — the intended fix working as diagnosed |
+| `FP04` | false_positive | HELD (unsure) | **BROKE (ai)** | combined moved 0.614 → 0.665 — a new false accusation |
+| `RQ02` | malformed | unsure | human | combined moved 0.359 → 0.312 — no verdict change, still HELD |
+
+**By family, after:**
+
+| Family | Attacks | HELD | BROKE (full) | BROKE (partial) |
+|---|---|---|---|---|
+| `evasion` | 10 | 1 | 3 | 6 |
+| `false_positive` | 8 | 7 | 1 | 0 |
+| `flood_same_creator` | 12 | 12 | 0 | 0 |
+| `malformed` | 20 | 18 | 2 | 0 |
+| `prompt_injection` | 6 | 6 | 0 | 0 |
+| **total** | **56** | **44** | **6** | **6** |
+
+Criteria re-run (`run_eval.py --label after`,
+[`results/run_2026-11-05_0354_after.md`](results/run_2026-11-05_0354_after.md)):
+criterion 1 stayed MET (0/10 `ai`, same as before) but the `unsure` share
+rose from 6/10 to 7/10 — the same upward pull visible in `EV02`, now
+visible in my own calibration texts too. Criterion 2 (score spread)
+improved: the ai/human gap widened from 0.4797 to 0.5193. Criteria 3, 4,
+and 5 were unaffected.
 
 **Did it help, and how do I know:**
 
 <!-- Widening the unsure band usually fixes one problem and creates another.
      Reporting that trade honestly is worth full credit. -->
 
+Partially, and I don't think it's a clear win. The total count of *full*
+breaks is identical before and after — **6 and 6** — the change didn't
+reduce the amount of severe failure, it relocated it. `EV02` moved from a
+full evasion to a partial one, a genuine improvement for that case. But
+`FP04` — a real human-written student essay, the kind of thing a real
+person would submit — moved the other direction, from correctly
+unaccused to wrongly labeled `ai`. The mechanism: `FP04`'s closing
+sentence ("In conclusion, the conflict cannot be explained by any single
+factor.") trips `phrasing.phrase_signal` (`phrase_score = 0.49`), and
+`FP04`'s `model_score` (0.8329) was already high because rubric-style
+writing reads as predictable to signal one — exactly the plain-writing
+blind spot named in Milestone 1. Under the old weights that combined to
+0.614 (unsure); under the new weights, weighting the already-high model
+signal more heavily pushed it to 0.665 — past the AI threshold.
 
+By my own criteria.md reasoning (criterion 1's rationale: a wrong
+accusation costs a real writer more than a missed detection costs the
+site), trading one closed evasion for one new false accusation is not a
+net improvement — it's a trade in the wrong direction, even though the raw
+counts look unchanged. The honest read is that `WEIGHT_STYLE_SIGNAL` was
+not the only thing wrong with the combining rule; `model_score`'s own
+blind spot against plain, formulaic human writing (criterion for which I
+already down-weighted it once, in Milestone 4) means weighting it *more*
+reopens exactly the failure mode that earlier decision existed to guard
+against. A single-axis reweight can't fix a problem that lives in both
+signals at once.
 
 ---
 
